@@ -1,0 +1,36 @@
+{
+  "_description": "回款提成核对规则 — 可配置的核对逻辑",
+  "_schema": "1.4",
+  "matching": {
+    "strategy": "three_level",
+    "levels": [
+      {"name": "合同编号", "type": "exact", "weight": 1},
+      {"name": "销售人员", "type": "fuzzy", "weight": 0.8},
+      {"name": "客户编码", "type": "exact", "weight": 1}
+    ]
+  },
+  "diff_grading": {
+    "A1": {
+      "description": "汇总表为空，季度分表有数据",
+      "action": "自动填充",
+      "conditions": ["target_cell is null or 0", "source_cell > 0", "contract_match = true"]
+    },
+    "A2": {
+      "description": "金额差异 ≤ 1.0 元且人员+客户均一致",
+      "action": "自动修正",
+      "conditions": ["contract_match = true", "person_match = true", "customer_match = true", "0 < abs(target - source) <= 1.0"]
+    },
+    "B": {
+      "description": "人员/客户不一致 或 金额差异 > 1.0 元待确认",
+      "action": "确认后修正",
+      "conditions": ["person_match = false", "或 customer_match = false", "或 abs(target - source) > 1.0"]
+    },
+    "C": {
+      "description": "依据独有（目标无此合同）或无法自动判断",
+      "action": "人工复核",
+      "conditions": ["contract_not_found", "或 fallback 无法判断"]
+    }
+  },
+  "amount_tolerance": 0.01,
+  "auto_fix_threshold": 1.0
+}

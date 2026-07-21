@@ -1,0 +1,19 @@
+{
+  "_schema": "1.4",
+  "_description": "销售提成汇总表字段说明",
+  "filename_pattern": "销售提成汇总表*.xlsx",
+  "sheets": [
+    {
+      "sheet_name": "汇总表",
+      "sheet_type": "汇总",
+      "header_row": 1,
+      "key_fields": ["合同编号", "销售人员", "客户编码"],
+      "quarterly_columns": {
+        "Q1": {"col": 19, "name": "兑现销售提成金额-2025年一季度"},
+        "Q2": {"col": 20, "name": "兑现销售提成金额-2025年二季度"},
+        "Q3": {"col": 21, "name": "兑现销售提成金额-2025年三季度"},
+        "Q4": {"col": 22, "name": "兑现销售提成金额-2025年四季度"}
+      }
+    }
+  ]
+}

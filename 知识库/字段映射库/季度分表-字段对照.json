@@ -1,0 +1,49 @@
+{
+  "_schema": "1.4",
+  "_description": "季度分表字段映射库 — 维护不同季度/版本的字段名对照",
+  "_note": "财务智能体在核对时自动读取本文件以适配不同季度的字段名差异",
+  "Q1": {
+    "entity": "母公司",
+    "sheet": "总明细表",
+    "fields": {
+      "contract": {"col": 4, "name": "合同编号"},
+      "person": {"col": 1, "name": "姓名"},
+      "customer": {"col": 3, "name": "客户单位"},
+      "amount": {"col": 12, "name": "个人提成金额（元）"}
+    },
+    "special_notes": "Q1 使用「重要事项考核系数」而非 MEMS"
+  },
+  "Q2": {
+    "entity": "母公司",
+    "sheet": "总明细表",
+    "fields": {
+      "contract": {"col": 4, "name": "合同编号"},
+      "person": {"col": 1, "name": "姓名"},
+      "customer": {"col": 3, "name": "客户单位"},
+      "amount": {"col": 12, "name": "个人提成金额（元）"}
+    },
+    "special_notes": "使用 MEMS激励系数"
+  },
+  "Q3": {
+    "entity": "母公司",
+    "sheet": "总明细表",
+    "fields": {
+      "contract": {"col": 4, "name": "合同编号"},
+      "person": {"col": 1, "name": "姓名"},
+      "customer": {"col": 3, "name": "客户单位"},
+      "amount": {"col": 12, "name": "个人提成金额（元）"}
+    },
+    "special_notes": "使用 MEMS激励系数"
+  },
+  "Q4": {
+    "entity": "天箭",
+    "sheet": "总明细表",
+    "fields": {
+      "contract": {"col": 4, "name": "合同编号"},
+      "person": {"col": 1, "name": "姓名"},
+      "customer": {"col": 3, "name": "客户单位"},
+      "amount": {"col": 12, "name": "个人提成金额（元）"}
+    },
+    "special_notes": "使用「激励系数」；实体为天箭"
+  }
+}
