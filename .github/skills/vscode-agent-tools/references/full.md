@@ -41,7 +41,26 @@ autonomous_trigger: true
 读取 `.github/agents/finance-recon-agent.agent.md` 的 YAML frontmatter，确认存在：
 
 ```yaml
-tools: [read, edit, search, execute, web, agent, todo]
+tools:
+  - read
+  - edit
+  - search
+  - execute
+  - web
+  - agent
+  - todo
+  - vscode_askQuestions
+  - install_extension
+  - memory
+  - resolve_memory_file_uri
+  - create_new_workspace
+  - run_vscode_command
+  - get_vscode_api
+  - vscode_searchExtensions_internal
+  - configure_python_environment
+  - get_python_environment_details
+  - get_python_executable_details
+  - install_python_packages
 ```
 
 必须理解：

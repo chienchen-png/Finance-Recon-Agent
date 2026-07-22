@@ -58,7 +58,7 @@ autonomous_trigger: true
 
 显示欢迎信息后，立即依次执行：
 
-1. **快速检测 Agent 工具授权**：读取 `.github/agents/finance-recon-agent.agent.md`，确认 frontmatter 包含 `tools: [read, edit, search, execute, web, agent, todo]`
+1. **快速检测 Agent 工具授权**：读取 `.github/agents/finance-recon-agent.agent.md`，确认 frontmatter 的 `tools` 显式包含基础别名以及 VS Code 内置能力，例如 `read/edit/search/execute/web/agent/todo`，以及 `vscode_askQuestions/install_extension/memory/resolve_memory_file_uri/create_new_workspace/run_vscode_command/get_vscode_api/vscode_searchExtensions_internal` 与 Python 环境工具。
 2. **快速检测已有配置**：检查 `.venv/` 是否存在、`openpyxl`/`xlrd` 是否可导入、Office Viewer 是否已安装、身份是否已初始化
 3. **若全部就绪** → 跳过步骤 2-4，直接进入步骤 5（显示状态报告 + 引导下一步）
 4. **若有缺失** → 自动进入步骤 2→3→4，修复缺失项（不询问，直接修复）
@@ -96,10 +96,29 @@ autonomous_trigger: true
 ⚠️ Agent 工具授权不完整。
 
 请在 .github/agents/finance-recon-agent.agent.md 的 YAML frontmatter 中设置：
-tools: [read, edit, search, execute, web, agent, todo]
+tools:
+  - read
+  - edit
+  - search
+  - execute
+  - web
+  - agent
+  - todo
+  - vscode_askQuestions
+  - install_extension
+  - memory
+  - resolve_memory_file_uri
+  - create_new_workspace
+  - run_vscode_command
+  - get_vscode_api
+  - vscode_searchExtensions_internal
+  - configure_python_environment
+  - get_python_environment_details
+  - get_python_executable_details
+  - install_python_packages
 
 当前缺失：{缺失列表}
-缺失这些别名时，智能体可能无法联网、读写文件、运行命令、搜索代码或委派子 Agent。
+缺失这些工具时，智能体可能无法联网、读写文件、运行命令、搜索代码、委派子 Agent、调用 VS Code 内置能力或配置 Python 环境。
 ```
 
 > 本步骤只检查 Agent 配置，不直接修改 Agent 文件；若用户要求修复，则使用 `apply_patch` 编辑 `.agent.md`。
@@ -180,7 +199,7 @@ python -m venv .venv
 
 ### 3.1 必需扩展
 
-使用 `install_extension` 工具安装以下必备扩展：
+先使用 `vscode_searchExtensions_internal` 查找扩展，再使用 `install_extension` 安装以下必备扩展：
 
 | 扩展 ID | 名称 | 用途 | 强制 |
 | --- | --- | --- | --- |
@@ -188,7 +207,7 @@ python -m venv .venv
 
 ### 3.2 推荐扩展（建议安装）
 
-使用 `vscode_askQuestions` 询问是否安装：
+先用 `vscode_searchExtensions_internal` 查找推荐扩展，再通过 `vscode_askQuestions` 询问是否安装：
 
 ```text
 Q: "以下推荐扩展可提升使用体验，是否安装？"

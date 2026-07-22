@@ -83,7 +83,7 @@ autonomous_trigger: true
 
 ### 0.3 逐文件询问分类（核心交互）
 
-> 使用 `vscode_askQuestions` 对每个文件逐一提问。
+> 该步骤必须使用 `vscode_askQuestions` 对每个文件逐一提问；任何文件分类、覆盖/跳过/删除选择都必须通过 VS Code 的提问组件完成，避免在普通聊天里散落确认。
 
 **提问模板（每个文件）**：
 

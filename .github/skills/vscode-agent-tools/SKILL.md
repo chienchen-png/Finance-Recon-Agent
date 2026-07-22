@@ -1,6 +1,6 @@
 ---
 name: vscode-agent-tools
-description: 'Use when: 用户说检查工具、工具不可用、无法调用工具、联网、读写文件、创建文件、编辑文件、命令行、终端、搜索、跟踪、委派、子Agent、VS Code 功能。检查 VS Code Agent 工具授权与调用路径。'
+description: 'Use when: 用户说检查工具、工具不可用、无法调用工具、联网、读写文件、创建文件、编辑文件、命令行、终端、搜索、跟踪、委派、子Agent、VS Code 功能、创建新工作区、使用 Memory、解析 memory URI、调用 VS Code API、查找扩展、安装扩展、浏览器交互。检查 VS Code Agent 工具授权与调用路径。'
 argument-hint: '检查工具 / 工具不可用 / 联网 / 命令行 / 委派'
 ---
 
@@ -9,7 +9,8 @@ argument-hint: '检查工具 / 工具不可用 / 联网 / 命令行 / 委派'
 ## When To Use
 
 - 用户反馈 Finance Recon Agent 无法调用基础工具。
-- 需要确认 `.agent.md` 是否授权 `read/edit/search/execute/web/agent/todo`。
+- 用户请求创建新工作区、使用 Memory、解析 memory URI、调用 VS Code API、搜索/安装扩展、打开浏览器、页面交互或执行 VS Code 命令。
+- 需要确认 `.agent.md` 是否显式授权 `read/edit/search/execute/web/agent/todo` 以及 VS Code 内置能力 `vscode_askQuestions/install_extension/memory/resolve_memory_file_uri/create_new_workspace/run_vscode_command/get_vscode_api/vscode_searchExtensions_internal` 和 Python 环境工具。
 - 需要解释或验证联网、文件、终端、VS Code 功能、搜索跟踪或子 Agent 委派。
 
 ## Procedure
