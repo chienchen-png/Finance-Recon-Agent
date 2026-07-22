@@ -16,9 +16,10 @@ argument-hint: '你好 / 初始化 / 配置环境 / 检查环境 / 归零'
 ## Procedure
 
 1. 优先检查 `.github/agents/finance-recon-agent.agent.md` frontmatter 的 `tools` 是否显式包含通用别名以及 VS Code 内置能力，例如 `read/edit/search/execute/web/agent/todo`，以及 `vscode_askQuestions/install_extension/memory/resolve_memory_file_uri/create_new_workspace/run_vscode_command/get_vscode_api/vscode_searchExtensions_internal` 与 Python 环境工具。
-2. 检查 Python、`.venv`、`openpyxl`、`xlrd`、Office Viewer、报告模板、项目空间和身份初始化状态。
-3. 若用户请求归零，执行双重确认后再清理运行数据。
-4. 若需要完整步骤、输出模板或归零清单，加载 [full procedure](./references/full.md)。
+2. 在首次启动时，先给用户一个“轻量进度反馈”，例如“我已经收到你的消息，正在检查 Python、虚拟环境、依赖项，接下来会继续检查扩展和身份信息”。不要让用户看到空白等待。
+3. 检查 Python、`.venv`、`openpyxl`、`xlrd`、Office Viewer、报告模板、项目空间和身份初始化状态。
+4. 若用户请求归零，执行双重确认后再清理运行数据。
+5. 若需要完整步骤、输出模板或归零清单，加载 [full procedure](./references/full.md)。
 
 ## Tool Notes
 
