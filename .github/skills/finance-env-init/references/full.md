@@ -58,7 +58,7 @@ autonomous_trigger: true
 
 显示欢迎信息后，立即依次执行：
 
-1. **快速检测 Agent 工具授权**：读取 `.github/agents/finance-recon-agent.agent.md`，确认 frontmatter 的 `tools` 显式包含基础别名以及 VS Code 内置能力，例如 `read/edit/search/execute/web/agent/todo`，以及 `vscode_askQuestions/install_extension/memory/resolve_memory_file_uri/create_new_workspace/run_vscode_command/get_vscode_api/vscode_searchExtensions_internal` 与 Python 环境工具。
+1. **快速检测 Agent 工具授权**：读取 `.github/agents/finance-recon-agent.agent.md`，确认 frontmatter 的 `tools` 显式包含基础别名 `read/edit/search/execute/web/agent/todo`，以及 `vscode_askQuestions`、`memory` 和 Python 扩展工具 `configurePythonEnvironment/getPythonEnvironmentInfo/getPythonExecutableCommand/installPythonPackage`。
 2. **快速检测已有配置**：检查 `.venv/` 是否存在、`openpyxl`/`xlrd` 是否可导入、Office Viewer 是否已安装、身份是否已初始化
 3. **若全部就绪** → 跳过步骤 2-4，直接进入步骤 5（显示状态报告 + 引导下一步）
 4. **若有缺失** → 自动进入步骤 2→3→4，修复缺失项（不询问，直接修复）
@@ -83,7 +83,7 @@ autonomous_trigger: true
 | 别名 | 对应能力 |
 | --- | --- |
 | `read` | `read_file`, `list_dir` 等读取能力 |
-| `edit` | `create_file`, `apply_patch`, `create_directory` 等编辑能力 |
+| `edit` | `create_file`, `replace_string_in_file`, `multi_replace_string_in_file`, `create_directory` 等编辑能力 |
 | `search` | `file_search`, `grep_search`, VS Code 符号搜索、诊断能力 |
 | `execute` | `run_in_terminal`, `get_terminal_output`, `send_to_terminal`, `kill_terminal` |
 | `web` | `fetch_webpage`, browser 页面打开与交互 |
@@ -105,23 +105,17 @@ tools:
   - agent
   - todo
   - vscode_askQuestions
-  - install_extension
   - memory
-  - resolve_memory_file_uri
-  - create_new_workspace
-  - run_vscode_command
-  - get_vscode_api
-  - vscode_searchExtensions_internal
-  - configure_python_environment
-  - get_python_environment_details
-  - get_python_executable_details
-  - install_python_packages
+  - configurePythonEnvironment
+  - getPythonEnvironmentInfo
+  - getPythonExecutableCommand
+  - installPythonPackage
 
 当前缺失：{缺失列表}
-缺失这些工具时，智能体可能无法联网、读写文件、运行命令、搜索代码、委派子 Agent、调用 VS Code 内置能力或配置 Python 环境。
+缺失这些工具时，智能体可能无法联网、读写文件、运行命令、搜索代码、委派子 Agent、与用户交互或配置 Python 环境。
 ```
 
-> 本步骤只检查 Agent 配置，不直接修改 Agent 文件；若用户要求修复，则使用 `apply_patch` 编辑 `.agent.md`。
+> 本步骤只检查 Agent 配置，不直接修改 Agent 文件；若用户要求修复，则使用 `replace_string_in_file` 编辑 `.agent.md`。
 
 ---
 
@@ -199,7 +193,7 @@ python -m venv .venv
 
 ### 3.1 必需扩展
 
-先使用 `vscode_searchExtensions_internal` 查找扩展，再使用 `install_extension` 安装以下必备扩展：
+通过 `run_in_terminal` 执行 `code --install-extension <扩展ID>` 安装以下必备扩展：
 
 | 扩展 ID | 名称 | 用途 | 强制 |
 | --- | --- | --- | --- |
@@ -207,7 +201,7 @@ python -m venv .venv
 
 ### 3.2 推荐扩展（建议安装）
 
-先用 `vscode_searchExtensions_internal` 查找推荐扩展，再通过 `vscode_askQuestions` 询问是否安装：
+通过 `vscode_askQuestions` 询问是否安装以下推荐扩展：
 
 ```text
 Q: "以下推荐扩展可提升使用体验，是否安装？"
