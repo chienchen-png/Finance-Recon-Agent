@@ -321,26 +321,51 @@ ${project_root}/
 
 | 脚本                  | 核心函数                                                                           | 被哪个 Skill 调用 | 用途                                                        |
 | --------------------- | ---------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------- |
-| `excel_reader.py`   | `read_schema_only(file_path, header_row, sheet_name)` → `dict`                | 01                | 仅扫描 sheet、行列数、字段名等结构元数据，不返回明细值      |
+| `excel_reader.py`   | `read_schema_only(file_path, header_row, sheet_name, data_start_row, preview_rows)` → `dict` | 01 | 仅扫描结构元数据；data_start_row 自动探测数据行，preview_rows 控制预览行数 |
 |                       | `read_excel(file_path, sheet_name)` → `dict`                                  | 02, 03 内部脚本   | 仅允许本地 Python 脚本内部读取，不得由 AI 读取输出          |
 | `field_mapper.py`   | `load_field_mapping(dir, quarter)` → `dict`                                   | 01, 02            | 加载字段映射配置，获取列索引                                |
 |                       | `load_summary_field_mapping(dir)` → `dict`                                    | 01, 02            | 加载汇总表字段说明                                          |
 |                       | `get_field_index(config, name)` → `int`                                       | 01, 02            | 精确+模糊匹配字段名→列索引                                 |
 |                       | `detect_sheet_type(data, header_row)` → `str`                                 | 01                | 自动识别 sheet 类型：汇总/明细/个人明细/其他                |
-| `matcher.py`        | `three_level_match(source, target, aliases, tolerance, threshold)` → `dict`   | 02                | **核心引擎**：合同编号→人员+客户→金额，三层渐进匹配 |
+| `matcher.py`        | `three_level_match(source_records, target_records, aliases, amount_tolerance, auto_fix_threshold, allow_fallback)` → `dict`   | 02                | **核心引擎**：合同编号→人员+客户→金额，三层渐进匹配；allow_fallback 控制降级匹配 |
 |                       | `load_aliases(dir)` → `dict`                                                  | 02                | 加载合同编号别名库                                          |
 |                       | `normalize_contract(contract, aliases)` → `str`                               | 02                | 别名→规范名                                                |
-| `reconciliation_engine.py` | `run_full_reconciliation(config)` → `dict`                             | 02                | 本地读取 Excel 并输出安全核对摘要和修正方案                 |
-|                       | `build_aggregated_fix_plan(config)` → `dict`                         | 02, 03            | 按复合键聚合生成修正方案，输出 1-based 行号                  |
-| `fix_executor.py`  | `execute_fix_plan(config)` → `dict`                                            | 03                | 本地执行修正、备份和验证，只输出执行摘要                    |
-| `verification_engine.py` | `run_reverse_verification(config)` → `dict`                         | 03, 04            | 本地执行源数据到最终汇总表的反向交叉校验                    |
+| `reconciliation_engine.py` | `run_full_reconciliation(config)` → `dict`  | 02 | 本地核对引擎；config 包含 source/target 文件路径、sheet、字段映射、金额列、阈值、别名等（完整字段见 §4.1.2） |
+|                       | `build_aggregated_fix_plan(source_file, target_file, source_sheet, target_sheet, source_field_mapping, target_field_mapping, target_amount_col, output_json_path, knowledge_base_dir, key_fields, exclude_contracts, source_header_row, target_header_row, source_data_start_row, target_data_start_row, quarter, rounding_strategy)` → `dict` | 02, 03 | 按复合键聚合生成修正方案，输出 1-based 行号 |
+| `fix_executor.py`  | `execute_fix_plan(plan_json_path, target_file, output_file, backup_dir, operator_info, use_working_copy, quarter, working_state_path)` → `dict` | 03 | 本地执行修正、备份和验证；V2.1 支持工作副本模式和季度快照 |
+| `verification_engine.py` | `run_reverse_verification(quarters, target_file, target_sheet, target_field_mapping, knowledge_base_dir, key_fields, amount_tolerance, exclude_contracts, output_json_path)` → `dict` | 03, 04 | 源数据到最终汇总表的反向交叉校验 |
 | `report_builder.py` | `build_quarterly_check_report(results, quarter, path, operator_info)` → `str` | 02, 04            | 生成季度核对报告 Markdown                                   |
-|                       | `build_final_summary_report(config)` → `str`                         | 04                | 根据季度摘要、执行摘要和反向校验摘要生成最终汇总报告        |
+|                       | `build_final_summary_report(config)` → `str`                         | 04                | 根据季度摘要、执行摘要和反向校验摘要生成最终汇总报告；config schema 见 §4.1.2 |
 | `backup_manager.py` | `create_single_snapshot(file_path, backup_dir)` → `str`                       | 03                | 首版快照（已存在则跳过，幂等）                              |
+|                       | `create_quarterly_snapshot(file_path, backup_dir, quarter)` → `str`           | 03                | V2.1：每季度修正前创建 `snap_{Q}_*` 快照                  |
 |                       | `restore_backup(backup_path, target_path)` → `str`                            | 03                | 从快照恢复                                                  |
+|                       | `restore_latest_snapshot(backup_dir, quarter, target_path)` → `str`           | 03                | V2.1：从指定季度最新快照恢复                               |
 |                       | `list_backups(backup_dir)` → `list`                                           | 03                | 列出所有快照                                                |
+|                       | `get_snapshot_chain(backup_dir)` → `dict`                                     | 03                | V2.1：查看快照版本链（按季度分组）                         |
 
 > `.github/skills/vscode-agent-tools/SKILL.md` 不调用业务 Python 脚本；它用于检查和解释 VS Code Agent 基础工具授权。
+
+#### 4.1.2 Config 字典参考（`run_full_reconciliation` / `build_final_summary_report`）
+
+以下为 `config` 形参的核心字段 schema，详细字段由各 Skill 的 `references/full.md` 按需展开：
+
+| 字段 | 类型 | 用途 |
+|------|------|------|
+| `source_file` | `str` | 依据文件（季度分表）路径 |
+| `target_file` | `str` | 目标汇总表路径 |
+| `source_sheet` / `target_sheet` | `str` | Sheet 名称 |
+| `source_field_mapping` / `target_field_mapping` | `dict` | 字段名→列索引映射 |
+| `target_amount_col` | `int` | 目标金额列（0-based） |
+| `key_fields` | `list[str]` | 聚合键（默认 `["contract","person"]`） |
+| `exclude_contracts` | `list[str]` | 排除合同编号列表 |
+| `amount_tolerance` | `float` | 金额容差（默认 0.01） |
+| `knowledge_base_dir` | `str` | 知识库根目录 |
+| `quarter` | `str` | 季度标识 Q1/Q2/Q3/Q4 |
+| `rounding_strategy` | `str` | 取整策略（`group_first` / `row_first`） |
+| `source_header_row` / `target_header_row` | `int` | 表头行（0-based） |
+| `source_data_start_row` / `target_data_start_row` | `int` | 数据起始行（0-based） |
+| `operator_info` | `dict` | 操作员身份（name/role） |
+| `output_json_path` | `str` | 输出 JSON 路径 |
 
 ### 4.1.1 临时脚本隔离机制（V2.1）
 
@@ -400,7 +425,7 @@ ${project_root}/
 1. 当前工具列表中没有的工具不得引用；若说明书出现旧工具名，应改用本表对应工具。
 2. 修改已有文本文件使用 `replace_string_in_file`（单次替换）或 `multi_replace_string_in_file`（批量替换）。
 3. 需要了解当前可用能力时，先按本表选择工具；若仍失败，向用户说明缺失的工具域和替代路径。
-4. VS Code 可识别的业务 Skill 入口统一位于 `.github/skills/<name>/SKILL.md`；`技能核心库/*.md` 仅作为人工可读归档/兼容副本，不作为注册入口。详细长流程放在各标准 Skill 的 `references/full.md` 中，仅按需加载。
+4. VS Code 可识别的业务 Skill 入口统一位于 `.github/skills/<name>/SKILL.md`；详细长流程放在各标准 Skill 的 `references/full.md` 中，仅按需加载。
 
 > ⚠️ **关键变更 (V1.7)**：所有 Python 代码通过 `run_in_terminal` 工具在终端中执行。
 
@@ -425,7 +450,7 @@ ${project_root}/
 # 得到 {PYTHON} = ".venv\Scripts\python.exe"
 
 # 步骤 B：执行结构扫描（不输出明细行）
-{PYTHON} -c "import sys; sys.path.insert(0, '工具脚本'); from excel_reader import read_schema_only; import json; print(json.dumps(read_schema_only(r'项目空间/项目空间1/数据库/原数据/依据文件/Q1.xlsx'), ensure_ascii=False))"
+{PYTHON} -c "import sys; sys.path.insert(0, '工具脚本'); from excel_reader import read_schema_only; import json; print(json.dumps(read_schema_only(r'${project_root}/数据库/原数据/依据文件/Q1.xlsx'), ensure_ascii=False))"
 ```
 
 **示例 2：02-Skill 中执行本地安全核对**
@@ -442,9 +467,10 @@ import sys
 sys.path.insert(0, '工具脚本')
 from backup_manager import create_single_snapshot
 
+# V2.1: 快照对象为工作副本，不是原数据
 snapshot = create_single_snapshot(
-    r'项目空间/项目空间1/数据库/原数据/待处理数据/汇总表.xlsx',
-    r'项目空间/项目空间1/修改日志/备份/'
+    r'${project_root}/结果输出/处理后数据/修正后/汇总表_工作副本.xlsx',
+    r'${project_root}/修改日志/备份/'
 )
 print(f'快照路径: {snapshot}')
 "
@@ -643,9 +669,14 @@ print(report)
 
 ```json
 {
-  "_schema": "1.4",
+  "_schema": "2.1",
   "last_updated": "ISO时间戳",
   "current_step": "02-数据核对",
+  "current_working_copy": {
+    "path": "结果输出/处理后数据/修正后/{文件名}_工作副本.xlsx",
+    "quarters_applied": ["Q1"],
+    "snapshot_chain": ["snap_Q1_20260724_130000.xlsx"]
+  },
   "checkpoints": {
     "01-扫描结构化": {"status": "completed", "completed_at": "...", "summary": "..."},
     "02-数据核对":   {"status": "in-progress", "completed_at": null, "summary": "..."},
@@ -721,20 +752,6 @@ print(report)
 │ ├─ 生成年度最终汇总报告           │
 │ ├─ 🆕 提示导出保存结果             │
 │ └─ 🆕 提示用户可说"归零"清空数据  │
-│ 03-修正执行与填充                │
-│ ├─ 幂等检查（已执行方案.json）    │
-│ ├─ 调用 backup_manager 创建首版快照 │
-│ ├─ 执行修正（A 类自动 + B 类确认） │
-│ ├─ 验证修正结果                  │
-│ └─ 追加操作日志 + 幂等记录       │
-└─────────────┬───────────────────┘
-              │ 自动触发 / 用户说"报告"
-              ▼
-┌─────────────────────────────────┐
-│ 04-报告生成                      │
-│ ├─ 填充校验核对报告模板           │
-│ ├─ 填充处理后报告模板             │
-│ └─ 整合年度最终汇总报告           │
 └─────────────┬───────────────────┘
               │ 用户说"脱密"
               ▼
@@ -794,7 +811,7 @@ L3: ${project_root}/修改日志/备份/  →  首版原始快照 + 季度快照
 | ⓪ | 导入数据         | 导入方式选择 + 指定路径输入 + 清单确认 + 逐文件分类 + 导入汇总确认 | `vscode_askQuestions` |
 | ① | 核对开始前       | 依据文件 + 目标文件 + 字段映射确认               | `vscode_askQuestions` |
 | ② | 字段映射         | 无法自动匹配时的备选映射                         | `vscode_askQuestions` |
-| ③ | 核对完成后       | 差异统计 + 修正策略（仅A/A+B逐条/逐条/不执行）   | `vscode_askQuestions` |
+| ③ | 核对完成后       | 差异统计 + 修正策略（仅A自动/A+B逐条确认/C类人工/全部不执行） | `vscode_askQuestions` |
 | ④ | 逐条确认         | B 类差异以哪方为准；C 类仅列入人工处理           | `vscode_askQuestions` |
 | ⑤ | 修正执行前       | 备份已创建 + 修改内容预览                        | `vscode_askQuestions` |
 | ⑥ | 无法处理         | 特殊合同/字段无法匹配                            | 人工判断                |
@@ -886,13 +903,16 @@ L3: ${project_root}/修改日志/备份/  →  首版原始快照 + 季度快照
 
 ### B. 工具 → Skill 调用映射
 
-| 工具脚本              | → Skill      |
-| --------------------- | ------------- |
-| `excel_reader.py`   | → 01         |
-| `field_mapper.py`   | → 01, 02     |
-| `matcher.py`        | → 02         |
-| `report_builder.py` | → 02, 03, 04 |
-| `backup_manager.py` | → 03         |
+| 工具脚本                  | → Skill      |
+| ------------------------- | ------------- |
+| `excel_reader.py`       | → 01         |
+| `field_mapper.py`       | → 01, 02     |
+| `matcher.py`            | → 02         |
+| `reconciliation_engine.py` | → 02, 03  |
+| `fix_executor.py`       | → 03         |
+| `verification_engine.py` | → 03, 04    |
+| `report_builder.py`     | → 02, 04     |
+| `backup_manager.py`     | → 03         |
 
 ### C. Skill 自动触发链
 
