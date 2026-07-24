@@ -17,9 +17,10 @@ argument-hint: '检查工具 / 工具不可用 / 联网 / 命令行 / 委派'
 
 1. 检查 `.github/agents/finance-recon-agent.agent.md` frontmatter 的 `tools` 字段。
 2. 确认 `python_tools` 没有占用 VS Code 的工具授权字段。
-3. 按能力域选择当前会话实际可用工具。
-4. 搜索并修正不存在的旧工具名；当前可用的编辑工具为 `replace_string_in_file` / `multi_replace_string_in_file`。
-5. 需要完整工具映射、验证流程和禁止行为时，加载 [full procedure](./references/full.md)。
+3. 检查 `工具脚本/临时脚本/` 是否存在，并确认其中 `README.md` 和 `.gitkeep` 可保留归零后的空目录。
+4. 按能力域选择当前会话实际可用工具。
+5. 搜索并修正不存在的旧工具名；当前可用的编辑工具为 `replace_string_in_file` / `multi_replace_string_in_file`。
+6. 需要完整工具映射、验证流程和禁止行为时，加载 [full procedure](./references/full.md)。
 
 ## Safety
 

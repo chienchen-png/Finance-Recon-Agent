@@ -111,6 +111,7 @@ tools:
 4. 如需验证命令行能力，用 `run_in_terminal` 执行只读命令，例如列出当前目录。
 5. 如需验证联网能力，用 `fetch_webpage` 抓取官方文档或用户指定网页。
 6. 如需验证委派能力，用 `runSubagent` 调用 `Explore` 做只读检索。
+7. 用 `file_search` 或 `list_dir` 检查 `工具脚本/临时脚本/` 是否存在；若不存在，创建目录并补充 `README.md` 与 `.gitkeep`。
 
 ---
 

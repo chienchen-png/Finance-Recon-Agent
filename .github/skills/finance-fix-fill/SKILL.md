@@ -18,11 +18,16 @@ argument-hint: '填充 / 修正数据 / 执行方案'
 2. 若没有修正方案，先触发 `finance-data-reconciliation`。
 3. 做幂等检查，避免同一方案重复执行。
 4. 创建首版备份和处理后数据工作副本。
-5. 按用户确认策略执行 A/B 类修正，C 类只进入人工清单。
-6. 追加操作日志，写入已执行方案，并触发报告生成。
-7. 需要完整逐条确认、备份规则和执行 JSON 结构时，加载 [full procedure](./references/full.md)。
+5. 调用 `工具脚本/fix_executor.py`，仅传修正方案路径、目标文件路径和输出路径，由本地 Python 执行 A/B 类修正，C 类只进入人工清单。
+6. 追加操作日志，写入已执行方案。
+7. **修正完成后自动触发 `finance-report-generation` 生成处理后报告**（无需用户额外触发）。
+8. 处理后报告生成后，用 `vscode_askQuestions` 询问下一步：继续下一季度 / 项目空间数据已全部完成 / 暂停。
+9. 若用户选择"项目空间数据已全部完成"，自动触发 `finance-report-generation` 生成最终汇总报告。
+10. 若处理后报告生成失败，用 `vscode_askQuestions` 提供"重试生成报告 / 暂停 / 查看错误摘要"选项。
+11. 需要完整逐条确认、备份规则、执行 JSON 结构和项目完成确认协议时，加载 [full procedure](./references/full.md)。
 
 ## Safety
 
 - 必须用户确认后才能写入处理后数据。
 - 不直接覆盖 `${project_root}/数据库/原数据/`。
+- AI 不直接打开修正目标 Excel，不读取修正前后完整数据行。
