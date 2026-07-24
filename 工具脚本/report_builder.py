@@ -195,11 +195,11 @@ def build_annual_report(
     report_dir = Path(quarterly_reports_dir)
     for md_file in sorted(report_dir.glob('Q*核对报告_*.md')):
         q = md_file.stem[:2]  # "Q1"
-        reports[q] = md_file.read_text(encoding='utf-8')
+        reports[q] = md_file.read_text(encoding='utf-8-sig')
 
     # 若提供模板则优先使用模板填充
     if template_path and Path(template_path).exists():
-        template = Path(template_path).read_text(encoding='utf-8')
+        template = Path(template_path).read_text(encoding='utf-8-sig')
         content = template.replace('{报告编号}', f'FIN-RECON-{year}-{datetime.now().strftime("%Y%m%d")}')
         content = content.replace('{YYYY}', year)
         content = content.replace('{操作编码}', operation_code or '—')
@@ -252,6 +252,150 @@ def build_annual_report(
         "## 六、修正统计总览",
         "（从修正日志中汇总）",
     ])
+
+    content = '\n'.join(lines)
+    Path(output_md_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_md_path).write_text(content, encoding='utf-8')
+    return content
+
+
+def build_final_summary_report(
+    quarterly_summary_paths,
+    execution_summary_paths,
+    verification_summary_path,
+    output_md_path,
+    operator_info=None,
+    final_output_file='',
+    year='2025'
+) -> str:
+    """根据结构化摘要生成最终汇总报告。"""
+    operator_info = operator_info or {}
+    quarterly_results = []
+    for path in quarterly_summary_paths:
+        data = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+        quarterly_results.append(data)
+
+    execution_summaries = []
+    for path in execution_summary_paths:
+        if Path(path).exists():
+            execution_summaries.append(json.loads(Path(path).read_text(encoding='utf-8-sig')))
+
+    verification = json.loads(Path(verification_summary_path).read_text(encoding='utf-8-sig'))
+    verification_summary = verification.get('summary', {})
+    failed_count = verification_summary.get('failed_count', 0)
+    report_status = '通过' if failed_count == 0 else '未通过'
+
+    total_records = sum(item.get('summary', {}).get('total', 0) for item in quarterly_results)
+    total_a1 = sum(item.get('summary', {}).get('a1_count', 0) for item in quarterly_results)
+    total_a2 = sum(item.get('summary', {}).get('a2_count', 0) for item in quarterly_results)
+    total_b = sum(item.get('summary', {}).get('b_count', 0) for item in quarterly_results)
+    total_c = sum(item.get('summary', {}).get('c_count', 0) for item in quarterly_results)
+    executed_count = sum(item.get('summary', {}).get('executed_count', 0) for item in execution_summaries)
+    skipped_count = sum(item.get('summary', {}).get('skipped_count', 0) for item in execution_summaries)
+
+    lines = [
+        f"# {year} 年度财务数据核对与修正 · 最终汇总报告（{report_status}）",
+        "",
+        "---",
+        "",
+        "## 一、项目总览",
+        "",
+        "| 项目 | 内容 |",
+        "| --- | --- |",
+        f"| 报告编号 | FIN-RECON-{year}-{datetime.now().strftime('%Y%m%d')} |",
+        f"| 报告日期 | {datetime.now().strftime('%Y-%m-%d')} |",
+        f"| 项目周期 | {year} 年度 |",
+        f"| 操作编码 | {operator_info.get('operation_code', '—')} |",
+        f"| 执行人 | {operator_info.get('operator_name', '—')} |",
+        f"| 审核人 | {operator_info.get('reviewer_name', '—')} |",
+        f"| 最终文件 | `{final_output_file}` |",
+        "",
+        "---",
+        "",
+        "## 二、逐季度处理结果",
+        "",
+        "| 季度 | 核对记录数 | A1 | A2 | B | C | 源文件 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+    ]
+
+    for item in quarterly_results:
+        meta = item.get('meta', {})
+        summary = item.get('summary', {})
+        lines.append(
+            f"| {meta.get('period', '')} | {summary.get('total', 0)} | "
+            f"{summary.get('a1_count', 0)} | {summary.get('a2_count', 0)} | "
+            f"{summary.get('b_count', 0)} | {summary.get('c_count', 0)} | "
+            f"{meta.get('source_file', '')} |"
+        )
+
+    lines.extend([
+        "",
+        "---",
+        "",
+        "## 三、全量修正统计",
+        "",
+        "```text",
+        "┌─────────────────────────────────────────┐",
+        f"│  总核对记录:   {total_records:<6} 条             │",
+        f"│  A1 自动修正:  {total_a1:<6} 条             │",
+        f"│  A2 小额修正:  {total_a2:<6} 条             │",
+        f"│  B 类确认:     {total_b:<6} 条             │",
+        f"│  C 类人工:     {total_c:<6} 条             │",
+        f"│  实际写入:     {executed_count:<6} 条             │",
+        f"│  跳过写入:     {skipped_count:<6} 条             │",
+        "└─────────────────────────────────────────┘",
+        "```",
+        "",
+        "---",
+        "",
+        "## 四、反向校验结果",
+        "",
+        "| 季度 | 源汇总组数 | 匹配组数 | 待人工 | 失败 |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ])
+
+    for item in verification.get('quarters', []):
+        lines.append(
+            f"| {item.get('quarter', '')} | {item.get('source_groups', 0)} | "
+            f"{item.get('matched_groups', 0)} | {item.get('manual_review_count', 0)} | "
+            f"{item.get('failed_count', 0)} |"
+        )
+
+    lines.extend([
+        "",
+        f"**结论：反向校验失败项 {failed_count} 条。**",
+        "",
+        "---",
+        "",
+        "## 五、待人工处理事项",
+        "",
+        "| 合同编号 | 人员 | 影响季度 | 问题 |",
+        "| --- | --- | --- | --- |",
+    ])
+
+    manual_items = verification.get('manual_review_items', [])
+    if manual_items:
+        for item in manual_items:
+            lines.append(
+                f"| {item.get('contract', '')} | {item.get('person', '')} | "
+                f"{item.get('quarter', '')} | {item.get('reason', '')} |"
+            )
+    else:
+        lines.append("| — | — | — | 无 |")
+
+    if verification.get('failed_items'):
+        lines.extend([
+            "",
+            "## 六、未通过差异",
+            "",
+            "| 合同编号 | 人员 | 季度 | 源金额 | 目标金额 | 差异 |",
+            "| --- | --- | --- | ---: | ---: | ---: |",
+        ])
+        for item in verification.get('failed_items', []):
+            lines.append(
+                f"| {item.get('contract', '')} | {item.get('person', '')} | {item.get('quarter', '')} | "
+                f"{item.get('source_amount', 0)} | {item.get('target_amount', 0)} | {item.get('diff_amount', 0)} |"
+            )
 
     content = '\n'.join(lines)
     Path(output_md_path).parent.mkdir(parents=True, exist_ok=True)

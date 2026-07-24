@@ -14,6 +14,15 @@ from excel_reader import read_excel, read_schema_only
 from matcher import load_aliases, normalize_contract
 
 
+def _work_file_dir(base_dir, category):
+    base_path = Path(base_dir)
+    if base_path.name == category:
+        return base_path
+    if base_path.name == '_工作文件':
+        return base_path / category
+    return base_path / '_工作文件' / category
+
+
 def _safe_number(value):
     if value is None or value == '':
         return 0.0
@@ -42,6 +51,10 @@ def _extract_records(file_path, sheet_name, field_mapping, data_start_row):
         contract = _safe_text(_get_cell(row, field_mapping['contract']))
         if not contract:
             continue
+        # 跳过"合计"/"小计"/"总计"等汇总行
+        person_text = _safe_text(_get_cell(row, field_mapping.get('person', -1)))
+        if any(kw in person_text for kw in ['合', '计', '小计', '总计', 'Subtotal', 'Total']):
+            continue
         records.append({
             'row_number': row_number,
             'contract': contract,
@@ -58,6 +71,178 @@ def _build_target_index(records, aliases):
         contract = normalize_contract(record['contract'], aliases)
         index[contract] = record
     return index
+
+
+def _build_key(record, key_fields, aliases=None):
+    values = []
+    for field in key_fields:
+        value = record.get(field, '')
+        if field == 'contract' and aliases is not None:
+            value = normalize_contract(value, aliases)
+        values.append(_safe_text(value))
+    return tuple(values)
+
+
+def _group_records(records, key_fields, aliases=None, exclude_contracts=None,
+                   rounding_strategy='group_first'):
+    exclude_contracts = set(exclude_contracts or [])
+    grouped = {}
+    for record in records:
+        contract = normalize_contract(record.get('contract', ''), aliases or {})
+        if contract in exclude_contracts:
+            continue
+        key = _build_key(record, key_fields, aliases)
+        if not any(key):
+            continue
+        if key not in grouped:
+            grouped[key] = {
+                'contract': record.get('contract', ''),
+                'person': record.get('person', ''),
+                'customer': record.get('customer', ''),
+                'amount': 0.0,
+                'source_rows': [],
+            }
+        amt = _safe_number(record.get('amount'))
+        if rounding_strategy == 'group_first':
+            amt = round(amt, 2)
+        grouped[key]['amount'] += amt
+        grouped[key]['source_rows'].append(record.get('row_number'))
+    return grouped
+
+
+def _build_composite_target_index(records, key_fields, aliases=None, rounding_strategy='group_first'):
+    index = {}
+    duplicates = {}
+    for record in records:
+        key = _build_key(record, key_fields, aliases)
+        if key in index:
+            duplicates.setdefault(key, [index[key]]).append(record)
+            continue
+        index[key] = record
+    return index, duplicates
+
+
+def build_aggregated_fix_plan(
+    source_file,
+    target_file,
+    source_sheet,
+    target_sheet,
+    source_field_mapping,
+    target_field_mapping,
+    target_amount_col,
+    output_json_path,
+    knowledge_base_dir='知识库',
+    key_fields=None,
+    exclude_contracts=None,
+    source_header_row=0,
+    target_header_row=1,
+    source_data_start_row=None,
+    target_data_start_row=None,
+    quarter='Q1',
+    rounding_strategy='group_first',  # V2.0
+):
+    """按复合键聚合源数据，生成可执行修正方案。
+
+    坐标协议：target_row 为 Excel 1-based 行号；target_col 为 0-based 列索引。
+    """
+    key_fields = key_fields or ['contract', 'person']
+    source_data_start_row = source_header_row + 1 if source_data_start_row is None else source_data_start_row
+    target_data_start_row = target_header_row + 1 if target_data_start_row is None else target_data_start_row
+
+    aliases = load_aliases(knowledge_base_dir)
+    source_records = _extract_records(source_file, source_sheet, source_field_mapping, source_data_start_row)
+    target_amount_mapping = dict(target_field_mapping)
+    target_amount_mapping['amount'] = target_amount_col
+    target_records = _extract_records(target_file, target_sheet, target_amount_mapping, target_data_start_row)
+
+    source_groups = _group_records(source_records, key_fields, aliases, exclude_contracts, rounding_strategy)
+    target_index, duplicates = _build_composite_target_index(target_records, key_fields, aliases)
+
+    key_label = '+'.join(key_fields)
+    fixes = []
+    manual_review = []
+    for key, source in source_groups.items():
+        duplicate_targets = duplicates.get(key)
+        if duplicate_targets:
+            manual_review.append({
+                'contract': source.get('contract', ''),
+                'person': source.get('person', ''),
+                'reason': '目标表存在重复定位行，需增加定位字段后再自动修正',
+                'target_rows': [item['row_number'] for item in duplicate_targets],
+            })
+            continue
+
+        target = target_index.get(key)
+        if not target:
+            manual_review.append({
+                'contract': source.get('contract', ''),
+                'person': source.get('person', ''),
+                'reason': '目标汇总表中无匹配记录',
+            })
+            continue
+
+        fixes.append({
+            'type': 'aggregated_fill',
+            'level': 'A1',
+            'contract': source.get('contract', ''),
+            'person': source.get('person', ''),
+            'customer': source.get('customer', ''),
+            'source_rows': source.get('source_rows', []),
+            'target_row': target['row_number'],
+            'target_col': target_amount_col,
+            'new_value': round(source.get('amount', 0.0), 2),
+            'reason': f'{quarter}按{key_label}聚合修正',
+        })
+
+    # 共享行累加检测：多个不同源合同→同一目标行时合并而非覆写
+    row_map = {}
+    row_contracts = {}
+    merged_count = 0
+    for item in fixes:
+        tr = item['target_row']
+        if tr in row_map:
+            row_map[tr]['new_value'] = round(row_map[tr]['new_value'] + item['new_value'], 2)
+            existing_contracts = row_contracts.get(tr, [row_map[tr]['contract']])
+            existing_contracts.append(item['contract'])
+            row_map[tr]['merged_from'] = existing_contracts
+            row_contracts[tr] = existing_contracts
+            merged_count += 1
+        else:
+            row_map[tr] = item
+            row_contracts[tr] = [item['contract']]
+    fixes = list(row_map.values())
+
+    plan = {
+        'period': quarter,
+        'generated_at': datetime.now().isoformat(),
+        'target_file': target_file,
+        'target_sheet': target_sheet,
+        'coordinate_contract': {
+            'target_row': 'Excel 1-based row number',
+            'target_col': '0-based column index',
+        },
+        'aggregation': {
+            'mode': 'composite_key_sum',
+            'key_fields': key_fields,
+            'exclude_contracts': exclude_contracts or [],
+        },
+        'summary': {
+            'source_groups': len(source_groups),
+            'total_fixes': len(fixes),
+            'merged_fixes_count': merged_count,
+            'manual_review_count': len(manual_review),
+        },
+        'fixes': fixes,
+        'manual_review_items': manual_review,
+    }
+    plan['content_hash'] = hashlib.sha256(
+        json.dumps(fixes, sort_keys=True, ensure_ascii=False).encode('utf-8')
+    ).hexdigest()
+
+    output_path = Path(output_json_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf-8')
+    return plan
 
 
 def _difference_item(level, detail, source, target=None, diff=None, target_amount_col=None, include_identity=False):
@@ -94,8 +279,19 @@ def run_full_reconciliation(
     target_data_start_row=None,
     quarter='Q1',
     output_dir=None,
+    fallback_strategy='person_customer',  # V2.0: None | 'person_customer'
+    rounding_strategy='group_first',      # V2.0: 'group_first' | 'total_first'
 ):
-    """执行本地核对并写出 AI 可安全读取的摘要和修正方案。"""
+    """执行本地核对并写出 AI 可安全读取的摘要和修正方案。
+
+    V2.0 新增参数:
+        fallback_strategy: 合同编号未匹配时是否降级到 (person + customer)。
+            None — 不降级，直接标记 C 类
+            'person_customer' — 用人员+客户复合键查找
+        rounding_strategy: 聚合金额的舍入策略。
+            'group_first' — 逐组 round(x, 2) 后再 sum
+            'total_first' — 先 sum 再 round(x, 2)
+    """
     source_data_start_row = source_header_row + 1 if source_data_start_row is None else source_data_start_row
     target_data_start_row = target_header_row + 1 if target_data_start_row is None else target_data_start_row
 
@@ -105,6 +301,19 @@ def run_full_reconciliation(
     target_amount_mapping['amount'] = target_amount_col
     target_records = _extract_records(target_file, target_sheet, target_amount_mapping, target_data_start_row)
     target_index = _build_target_index(target_records, aliases)
+
+    # V2.0: 降级匹配索引（人员+客户 → 目标行）
+    fallback_index = {}
+    fallback_stats = {'attempted': 0, 'found': 0}
+    if fallback_strategy == 'person_customer':
+        for rec in target_records:
+            key = (rec.get('person', ''), rec.get('customer', ''))
+            # 保存：遇到相同键时后者记录为重复
+            existing = fallback_index.get(key)
+            if existing:
+                existing['duplicate'] = True
+            else:
+                fallback_index[key] = rec
 
     summary = {
         'total': len(source_records),
@@ -120,10 +329,20 @@ def run_full_reconciliation(
     for source in source_records:
         contract = normalize_contract(source['contract'], aliases)
         target = target_index.get(contract)
+        if not target and fallback_strategy == 'person_customer':
+            # V2.0: 降级匹配
+            fb_key = (source.get('person', ''), source.get('customer', ''))
+            fb = fallback_index.get(fb_key)
+            if fb and not fb.get('duplicate'):
+                target = fb
+                fallback_stats['found'] += 1
+                # 标记为 [降级匹配]，后续差异项描述会显示
+            fallback_stats['attempted'] += 1
         if not target:
             summary['c_count'] += 1
             differences.append(_difference_item(
-                'C', 'C类-依据独有（目标缺失）', source, target_amount_col=target_amount_col
+                'C', 'C类-依据独有（目标缺失）', source, target_amount_col=target_amount_col,
+                include_identity=(fallback_strategy == 'person_customer')
             ))
             continue
 
@@ -225,13 +444,19 @@ def run_full_reconciliation(
         'differences': differences,
         'fix_plan': plan,
     }
+    if fallback_strategy:
+        result['summary']['fallback_stats'] = fallback_stats
 
     if output_dir:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         date_str = datetime.now().strftime('%Y%m%d')
-        result_path = output_path / f'{quarter}核对结果摘要_{date_str}.json'
-        plan_path = output_path / f'{quarter}修正方案_{date_str}.json'
+        summary_dir = _work_file_dir(output_path, '核对摘要')
+        fix_plan_dir = _work_file_dir(output_path, '修正方案')
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        fix_plan_dir.mkdir(parents=True, exist_ok=True)
+        result_path = summary_dir / f'{quarter}核对结果摘要_{date_str}.json'
+        plan_path = fix_plan_dir / f'{quarter}修正方案_{date_str}.json'
         result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
         plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding='utf-8')
         result['output_files'] = {
@@ -249,5 +474,5 @@ if __name__ == '__main__':
     parser.add_argument('--config', required=True, help='核对配置 JSON 路径')
     args = parser.parse_args()
 
-    config = json.loads(Path(args.config).read_text(encoding='utf-8'))
+    config = json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
     print(json.dumps(run_full_reconciliation(**config), ensure_ascii=False, indent=2))

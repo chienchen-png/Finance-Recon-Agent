@@ -93,3 +93,62 @@ def detect_sheet_type(sheet_data: list, header_row: int) -> str:
     if '明细' in header_str:
         return "明细"
     return "其他"
+
+
+def load_file_specific_mapping(knowledge_base_dir: str, file_name: str) -> dict:
+    """
+    加载针对特定文件的字段映射配置（如有）。
+
+    优先级: 文件级 > 季度级（全局默认）
+
+    文件级映射配置结构:
+      知识库/字段映射库/文件映射/{文件主名}.json
+      格式: {"sheets": {"Sheet1": {"fields": {...}}}}
+
+    Args:
+        knowledge_base_dir: 知识库根目录
+        file_name: 目标文件名（含扩展名）
+
+    Returns:
+        dict: 文件级字段映射配置，若不存在返回空字典
+    """
+    file_stem = Path(file_name).stem
+    file_config_path = Path(knowledge_base_dir) / '字段映射库' / '文件映射' / f'{file_stem}.json'
+    if file_config_path.exists():
+        with open(file_config_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+
+def resolve_field_mapping(knowledge_base_dir: str, quarter: str = None,
+                          file_name: str = None, sheet_name: str = None) -> dict:
+    """
+    解析最终生效的字段映射：文件级 > 季度级。
+
+    Args:
+        knowledge_base_dir: 知识库根目录
+        quarter: 季度标识（Q1-Q4）
+        file_name: 文件名
+        sheet_name: sheet 名称
+
+    Returns:
+        dict: 最终生效的字段映射
+    """
+    # 先加载季度全局映射
+    base_mapping = {}
+    if quarter:
+        try:
+            base_mapping = load_field_mapping(knowledge_base_dir, quarter)
+        except (KeyError, FileNotFoundError):
+            base_mapping = {}
+
+    # 再加载文件级覆盖
+    if file_name:
+        file_mapping = load_file_specific_mapping(knowledge_base_dir, file_name)
+        if sheet_name and file_mapping:
+            sheet_override = file_mapping.get('sheets', {}).get(sheet_name, {})
+            # 深度合并：文件级覆盖季度级 fields
+            base_mapping = dict(base_mapping)
+            base_mapping.update(sheet_override)
+
+    return base_mapping

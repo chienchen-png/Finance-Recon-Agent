@@ -1,13 +1,15 @@
 {
   "_description": "回款提成核对规则 — 可配置的核对逻辑",
-  "_schema": "1.4",
+  "_schema": "2.0",
   "matching": {
     "strategy": "three_level",
     "levels": [
       {"name": "合同编号", "type": "exact", "weight": 1},
       {"name": "销售人员", "type": "fuzzy", "weight": 0.8},
       {"name": "客户编码", "type": "exact", "weight": 1}
-    ]
+    ],
+    "fallback_strategy": "person_customer",
+    "fallback_description": "合同编号未匹配时，降级用（人员+客户）复合键查找目标行；标记为[降级匹配]"
   },
   "diff_grading": {
     "A1": {
@@ -32,5 +34,16 @@
     }
   },
   "amount_tolerance": 0.01,
-  "auto_fix_threshold": 1.0
+  "auto_fix_threshold": 1.0,
+  "rounding_strategy": "group_first",
+  "rounding_description": "group_first: 先 round(x,2) 再 sum；total_first: 先 sum 再 round(x,2)",
+  "reverse_verification": {
+    "enabled": true,
+    "description": "修正后自动用源季度分表数据回算校验最终汇总表"
+  },
+  "last_confirmed": {
+    "by": "",
+    "at": "",
+    "quarter": ""
+  }
 }

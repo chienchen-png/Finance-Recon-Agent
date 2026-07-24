@@ -57,7 +57,8 @@ def three_level_match(
     target_records: list,
     aliases: dict,
     amount_tolerance: float = 0.01,
-    auto_fix_threshold: float = 1.0
+    auto_fix_threshold: float = 1.0,
+    allow_fallback: bool = True  # V2.0: 合同未匹配时是否降级到 (人员+客户)
 ) -> dict:
     """
     执行三层匹配。
@@ -68,6 +69,7 @@ def three_level_match(
         aliases: 合同别名映射
         amount_tolerance: 金额比较容差
         auto_fix_threshold: 自动修正阈值（≤此值的差异自动修正）
+        allow_fallback: V2.0 — 合同未匹配时是否尝试 (人员+客户) 降级匹配
 
     Returns:
         dict: {
@@ -81,6 +83,17 @@ def three_level_match(
         c = normalize_contract(rec.get('contract', ''), aliases)
         target_index[c] = rec
 
+    # V2.0: 降级匹配索引（人员+客户 → 目标行）
+    fallback_index = {}
+    if allow_fallback:
+        for rec in target_records:
+            key = (rec.get('person', ''), rec.get('customer', ''))
+            existing = fallback_index.get(key)
+            if existing:
+                existing['duplicate'] = True
+            else:
+                fallback_index[key] = rec
+
     results = []
     summary = {
         'total': len(source_records),
@@ -93,14 +106,28 @@ def three_level_match(
         result = {'source': src, 'level': '', 'detail': ''}
 
         # ① 合同编号匹配
-        if contract not in target_index:
+        target = target_index.get(contract)
+        if not target and allow_fallback:
+            fb_key = (src.get('person', ''), src.get('customer', ''))
+            fb = fallback_index.get(fb_key)
+            if fb and not fb.get('duplicate'):
+                target = fb
+                result['detail'] = '[FALLBACK] 降级匹配（合同未匹配，人员+客户命中）'
+        if not target:
             result['level'] = 'C'
-            result['detail'] = 'C类-季度独有（汇总表无此合同）'
+            result['detail'] = result.get('detail', '') or 'C类-季度独有（汇总表无此合同）'
+            if not result['detail'].startswith('[FALLBACK]'):
+                result['detail'] = 'C类-季度独有（汇总表无此合同）'
             summary['c_count'] += 1
             results.append(result)
             continue
 
-        target = target_index[contract]
+        # 如果已经通过 fallback 找到 target，需要更新 detail
+        if result.get('detail', '').startswith('[FALLBACK]'):
+            # 降级匹配成功，继续走正常比对流程
+            pass
+
+        target = target_index.get(contract, target)
 
         # ② 销售人员校验
         src_person = src.get('person', '')
